@@ -452,6 +452,8 @@ export class Checkredirects implements INodeType {
 				method,
 				url: `${baseUrl}${path}`,
 				json: true,
+				followRedirect: false,
+				followAllRedirects: false,
 			};
 			if (body) options.body = body;
 			if (qs) {
@@ -579,9 +581,13 @@ export class Checkredirects implements INodeType {
 							const compareWith = this.getNodeParameter('compareWithJobId', i, '') as string;
 							if (compareWith) {
 								result = await api('GET', `/v1/jobs/${jobId}/compare/${compareWith}`);
-							}
-
-							if (this.getNodeParameter('splitResults', i, true) && result.checks) {
+								if (this.getNodeParameter('splitResults', i, true) && result.diffs) {
+									for (const diff of result.diffs) {
+										returnData.push({ json: diff, pairedItem: i });
+									}
+									continue;
+								}
+							} else if (this.getNodeParameter('splitResults', i, true) && result.checks) {
 								for (const check of result.checks) {
 									returnData.push({ json: check, pairedItem: i });
 								}
@@ -620,7 +626,7 @@ export class Checkredirects implements INodeType {
 						const changesOnly = this.getNodeParameter('changesOnly', i, true);
 						let diffs = data.diffs || [];
 						if (changesOnly) {
-							diffs = diffs.filter((d: any) => d.change_type !== 'unchanged');
+							diffs = diffs.filter((d: any) => d.change !== 'unchanged');
 						}
 						for (const d of diffs) {
 							returnData.push({ json: d, pairedItem: i });
