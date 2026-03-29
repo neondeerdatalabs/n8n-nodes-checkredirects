@@ -1,0 +1,11 @@
+{
+	"node": "n8n-nodes-checkredirects.checkredirectsPollTrigger",
+	"nodeVersion": "1.0",
+	"codexVersion": "1.0",
+	"categories": ["Developer Tools"],
+	"subcategories": { "Developer Tools": ["SEO"] },
+	"resources": {
+		"primaryDocumentation": [{ "url": "https://checkredirects.io/docs" }]
+	},
+	"alias": ["redirect", "seo", "poll", "monitor", "changes"]
+}

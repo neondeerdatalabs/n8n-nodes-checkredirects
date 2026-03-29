@@ -4,6 +4,7 @@ import {
 	INodeType,
 	INodeTypeDescription,
 	IWebhookResponseData,
+	NodeConnectionTypes,
 } from 'n8n-workflow';
 
 export class CheckredirectsTrigger implements INodeType {
@@ -19,13 +20,7 @@ export class CheckredirectsTrigger implements INodeType {
 			name: 'Checkredirects.io Trigger',
 		},
 		inputs: [],
-		outputs: ['main'],
-		credentials: [
-			{
-				name: 'checkredirectsApi',
-				required: true,
-			},
-		],
+		outputs: [{ type: NodeConnectionTypes.Main }],
 		webhooks: [
 			{
 				name: 'default',
@@ -65,8 +60,7 @@ export class CheckredirectsTrigger implements INodeType {
 				type: 'notice',
 				default: '',
 				displayOptions: { show: { event: ['batch.completed', 'monitor.completed', 'monitor.change_detected'] } },
-				// eslint-disable-next-line
-				description: 'Copy the webhook URL shown above and paste it as the webhook_url when creating batches or monitors (via the API, UI, or another n8n node). The API will POST to this URL when the event occurs.',
+				description: 'Copy the webhook URL shown above and paste it as the webhook_url when creating batches or monitors (via the API, UI, or another n8n node). The API will POST to this URL when the event occurs. Payloads include an X-Signature header for verification.',
 			},
 		],
 	};
@@ -74,17 +68,12 @@ export class CheckredirectsTrigger implements INodeType {
 	webhookMethods = {
 		default: {
 			async checkExists(this: IHookFunctions): Promise<boolean> {
-				// Webhooks are registered by the user when creating batches/monitors.
-				// We just need the n8n webhook endpoint to exist.
 				return true;
 			},
 			async create(this: IHookFunctions): Promise<boolean> {
-				// Nothing to register server-side — the user pastes the webhook URL
-				// into their batch/monitor configuration.
 				return true;
 			},
 			async delete(this: IHookFunctions): Promise<boolean> {
-				// Nothing to clean up.
 				return true;
 			},
 		},
@@ -94,9 +83,7 @@ export class CheckredirectsTrigger implements INodeType {
 		const body = this.getBodyData() as any;
 		const event = this.getNodeParameter('event') as string;
 
-		// Filter by event type.
 		if (event === 'monitor.change_detected') {
-			// Only fire if the webhook payload indicates changes.
 			if (body.event !== 'monitor.completed' || !body.has_changes) {
 				return { noWebhookResponse: true };
 			}

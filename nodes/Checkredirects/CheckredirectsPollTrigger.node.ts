@@ -3,6 +3,7 @@ import {
 	INodeExecutionData,
 	INodeType,
 	INodeTypeDescription,
+	NodeConnectionTypes,
 	NodeOperationError,
 } from 'n8n-workflow';
 
@@ -20,7 +21,7 @@ export class CheckredirectsPollTrigger implements INodeType {
 		},
 		polling: true,
 		inputs: [],
-		outputs: ['main'],
+		outputs: [{ type: NodeConnectionTypes.Main }],
 		credentials: [
 			{
 				name: 'checkredirectsApi',
@@ -57,12 +58,11 @@ export class CheckredirectsPollTrigger implements INodeType {
 
 		let runs: any[];
 		try {
-			const response = await this.helpers.httpRequest({
-				method: 'GET',
-				url,
-				headers: { Authorization: `Bearer ${credentials.apiKey}` },
-				json: true,
-			});
+			const response = await this.helpers.httpRequestWithAuthentication.call(
+				this,
+				'checkredirectsApi',
+				{ method: 'GET', url, json: true },
+			);
 			runs = response.data || [];
 		} catch (error: any) {
 			const status = error?.response?.status || error?.statusCode;

@@ -4,6 +4,7 @@ import {
 	INodeExecutionData,
 	INodeType,
 	INodeTypeDescription,
+	NodeConnectionTypes,
 	NodeOperationError,
 } from 'n8n-workflow';
 
@@ -19,8 +20,8 @@ export class Checkredirects implements INodeType {
 		defaults: {
 			name: 'Checkredirects.io',
 		},
-		inputs: ['main'],
-		outputs: ['main'],
+		inputs: [{ type: NodeConnectionTypes.Main }],
+		outputs: [{ type: NodeConnectionTypes.Main }],
 		credentials: [
 			{
 				name: 'checkredirectsApi',
@@ -28,7 +29,6 @@ export class Checkredirects implements INodeType {
 			},
 		],
 		properties: [
-			// Resource selector
 			{
 				displayName: 'Resource',
 				name: 'resource',
@@ -57,8 +57,6 @@ export class Checkredirects implements INodeType {
 				],
 				default: 'inspect',
 			},
-
-			// Inspect URL fields
 			{
 				displayName: 'URL',
 				name: 'url',
@@ -66,11 +64,12 @@ export class Checkredirects implements INodeType {
 				required: true,
 				default: '',
 				placeholder: 'https://example.com',
+				description: 'The URL to inspect (http/https, max 2048 characters)',
 				displayOptions: { show: { resource: ['inspection'], operation: ['inspect', 'compareAgents'] } },
 			},
 			{
 				displayName: 'Preset',
-				name: 'presetId',
+				name: 'inspectPresetId',
 				type: 'options',
 				typeOptions: { loadOptionsMethod: 'getPresets' },
 				default: '',
@@ -86,6 +85,7 @@ export class Checkredirects implements INodeType {
 					{ name: 'GET', value: 'GET' },
 				],
 				default: 'HEAD',
+				description: 'HTTP method to use for the request',
 				displayOptions: { show: { resource: ['inspection'], operation: ['inspect'] } },
 			},
 			{
@@ -93,6 +93,7 @@ export class Checkredirects implements INodeType {
 				name: 'followRedirects',
 				type: 'boolean',
 				default: true,
+				description: 'Whether to follow redirect responses (3xx status codes)',
 				displayOptions: { show: { resource: ['inspection'], operation: ['inspect'] } },
 			},
 			{
@@ -109,6 +110,7 @@ export class Checkredirects implements INodeType {
 				type: 'string',
 				default: '',
 				placeholder: 'googlebot_desktop or custom string',
+				description: 'A preset key (e.g. googlebot_desktop) or custom UA string',
 				displayOptions: { show: { resource: ['inspection'], operation: ['inspect'] } },
 			},
 			{
@@ -173,8 +175,6 @@ export class Checkredirects implements INodeType {
 				],
 				default: 'checkAndWait',
 			},
-
-			// Batch: URLs input (for create and checkAndWait)
 			{
 				displayName: 'URLs',
 				name: 'urls',
@@ -188,7 +188,7 @@ export class Checkredirects implements INodeType {
 			},
 			{
 				displayName: 'Preset',
-				name: 'presetId',
+				name: 'batchPresetId',
 				type: 'options',
 				typeOptions: { loadOptionsMethod: 'getPresets' },
 				default: '',
@@ -204,6 +204,7 @@ export class Checkredirects implements INodeType {
 					{ name: 'GET', value: 'GET' },
 				],
 				default: 'HEAD',
+				description: 'HTTP method to use for batch requests',
 				displayOptions: { show: { resource: ['batch'], operation: ['create', 'checkAndWait'] } },
 			},
 			{
@@ -211,6 +212,7 @@ export class Checkredirects implements INodeType {
 				name: 'batchUserAgent',
 				type: 'string',
 				default: '',
+				description: 'A preset key (e.g. googlebot_desktop) or custom UA string',
 				displayOptions: { show: { resource: ['batch'], operation: ['create', 'checkAndWait'] } },
 			},
 			{
@@ -244,8 +246,6 @@ export class Checkredirects implements INodeType {
 				description: 'If set, returns only the diff between this batch and the specified job',
 				displayOptions: { show: { resource: ['batch'], operation: ['checkAndWait'] } },
 			},
-
-			// Batch: Job ID (for getResults, getProgress)
 			{
 				displayName: 'Job ID',
 				name: 'jobId',
@@ -283,8 +283,6 @@ export class Checkredirects implements INodeType {
 				description: 'Filter results by final destination URL substring',
 				displayOptions: { show: { resource: ['batch'], operation: ['getResults'] } },
 			},
-
-			// Batch: Compare
 			{
 				displayName: 'Job ID',
 				name: 'compareJobId',
@@ -321,7 +319,7 @@ export class Checkredirects implements INodeType {
 					{ name: 'Create', value: 'create', action: 'Create a monitor' },
 					{ name: 'List', value: 'list', action: 'List monitors' },
 					{ name: 'Get', value: 'get', action: 'Get a monitor' },
-					{ name: 'Update', value: 'update', action: 'Update a monitor' },
+					{ name: 'Update', value: 'update', description: 'Replace all monitor settings (all fields required)', action: 'Update a monitor' },
 					{ name: 'Delete', value: 'delete', action: 'Delete a monitor' },
 					{ name: 'Pause', value: 'pause', action: 'Pause a monitor' },
 					{ name: 'Resume', value: 'resume', action: 'Resume a monitor' },
@@ -330,24 +328,22 @@ export class Checkredirects implements INodeType {
 				],
 				default: 'list',
 			},
-
-			// Monitor: ID field
 			{
 				displayName: 'Monitor ID',
 				name: 'monitorId',
 				type: 'string',
 				required: true,
 				default: '',
+				description: 'The ID of the monitor. Find it on the Monitors page or via List Monitors.',
 				displayOptions: { show: { resource: ['monitor'], operation: ['get', 'update', 'delete', 'pause', 'resume', 'trigger', 'getRuns'] } },
 			},
-
-			// Monitor: Create/Update fields
 			{
 				displayName: 'Name',
 				name: 'monitorName',
 				type: 'string',
 				required: true,
 				default: '',
+				description: 'A display name for this monitor',
 				displayOptions: { show: { resource: ['monitor'], operation: ['create', 'update'] } },
 			},
 			{
@@ -358,6 +354,7 @@ export class Checkredirects implements INodeType {
 				required: true,
 				default: '',
 				placeholder: 'One URL per line',
+				description: 'URLs to monitor for redirect changes, one per line',
 				displayOptions: { show: { resource: ['monitor'], operation: ['create', 'update'] } },
 			},
 			{
@@ -379,6 +376,7 @@ export class Checkredirects implements INodeType {
 				name: 'monitorWebhookUrl',
 				type: 'string',
 				default: '',
+				description: 'URL to POST when a monitor run completes',
 				displayOptions: { show: { resource: ['monitor'], operation: ['create', 'update'] } },
 			},
 			{
@@ -388,8 +386,6 @@ export class Checkredirects implements INodeType {
 				default: false,
 				displayOptions: { show: { resource: ['monitor'], operation: ['create', 'update'] } },
 			},
-
-			// Monitor: Get Runs options
 			{
 				displayName: 'Include Changes',
 				name: 'includeChanges',
@@ -417,14 +413,16 @@ export class Checkredirects implements INodeType {
 	methods = {
 		loadOptions: {
 			async getPresets(this: ILoadOptionsFunctions) {
-				const credentials = await this.getCredentials('checkredirectsApi');
-				const baseUrl = credentials.baseUrl as string;
 				try {
-					const response = await this.helpers.httpRequest({
-						method: 'GET',
-						url: `${baseUrl}/v1/presets`,
-						headers: { Authorization: `Bearer ${credentials.apiKey}` },
-					});
+					const response = await this.helpers.httpRequestWithAuthentication.call(
+						this,
+						'checkredirectsApi',
+						{
+							method: 'GET',
+							url: `${(await this.getCredentials('checkredirectsApi')).baseUrl}/v1/presets`,
+							json: true,
+						},
+					);
 					const options = [{ name: '(None)', value: '' }];
 					if (response?.data) {
 						for (const p of response.data) {
@@ -440,16 +438,19 @@ export class Checkredirects implements INodeType {
 	};
 
 	async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
+		const items = this.getInputData();
+		const returnData: INodeExecutionData[] = [];
 		const resource = this.getNodeParameter('resource', 0) as string;
 		const operation = this.getNodeParameter('operation', 0) as string;
 		const credentials = await this.getCredentials('checkredirectsApi');
 		const baseUrl = credentials.baseUrl as string;
 
+		const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 		const api = async (method: string, path: string, body?: object, qs?: Record<string, string>, retries = 1): Promise<any> => {
 			const options: any = {
 				method,
 				url: `${baseUrl}${path}`,
-				headers: { Authorization: `Bearer ${credentials.apiKey}` },
 				json: true,
 			};
 			if (body) options.body = body;
@@ -458,12 +459,14 @@ export class Checkredirects implements INodeType {
 				if (params) options.url += '?' + params;
 			}
 			try {
-				return await this.helpers.httpRequest(options);
+				return await this.helpers.httpRequestWithAuthentication.call(this, 'checkredirectsApi', options);
 			} catch (error: any) {
-				const status = error?.response?.status || error?.statusCode || error?.cause?.code;
+				const httpStatus = error?.response?.status || error?.statusCode;
+				const networkCode = error?.cause?.code || error?.code;
+				const isRetryable = (httpStatus && httpStatus >= 500) ||
+					['ECONNREFUSED', 'ETIMEDOUT', 'ECONNRESET', 'EAI_AGAIN'].includes(networkCode);
 
-				// Retry on transient 5xx errors (deploy-related 502s, etc.)
-				if (status >= 500 && retries > 0) {
+				if (isRetryable && retries > 0) {
 					await sleep(2000);
 					return api(method, path, body, qs, retries - 1);
 				}
@@ -471,216 +474,237 @@ export class Checkredirects implements INodeType {
 				const respBody = error?.response?.body;
 				const apiMsg = typeof respBody === 'string' ? respBody : respBody?.error?.message;
 				const msg = apiMsg || error?.message || 'API request failed';
-				if (status === 401) throw new NodeOperationError(this.getNode(), 'Invalid API key. Create one at Settings > API Keys in checkredirects.io.');
-				if (status === 403) throw new NodeOperationError(this.getNode(), msg || 'This feature requires a paid plan. Upgrade at checkredirects.io/settings/billing.');
-				if (status === 422) throw new NodeOperationError(this.getNode(), msg);
-				if (status === 429) throw new NodeOperationError(this.getNode(), `Monthly check limit exceeded. ${msg}. Upgrade at checkredirects.io/settings/billing.`);
-				if (status === 503) throw new NodeOperationError(this.getNode(), 'Service unavailable. Google Sheets may not be connected — check checkredirects.io/settings/integrations.');
-				throw new NodeOperationError(this.getNode(), `API error (${status || 'unknown'}): ${msg}`);
+				if (httpStatus === 401) throw new NodeOperationError(this.getNode(), 'Invalid API key. Create one at Settings > API Keys in checkredirects.io.');
+				if (httpStatus === 403) throw new NodeOperationError(this.getNode(), msg || 'This feature requires a paid plan. Upgrade at checkredirects.io/settings/billing.');
+				if (httpStatus === 422) throw new NodeOperationError(this.getNode(), msg);
+				if (httpStatus === 429) throw new NodeOperationError(this.getNode(), `Monthly check limit exceeded. ${msg}. Upgrade at checkredirects.io/settings/billing.`);
+				if (httpStatus === 503) throw new NodeOperationError(this.getNode(), 'Service unavailable. Google Sheets may not be connected — check checkredirects.io/settings/integrations.');
+				throw new NodeOperationError(this.getNode(), `API error (${httpStatus || networkCode || 'unknown'}): ${msg}`);
 			}
 		};
 
-		const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+		const unwrap = (result: any): any => {
+			if (Array.isArray(result)) return result;
+			if (result?.data && Array.isArray(result.data)) return result.data;
+			if (result?.checks && Array.isArray(result.checks)) return result.checks;
+			return result;
+		};
 
-		let result: any;
+		for (let i = 0; i < items.length; i++) {
+			try {
+				let result: any;
 
-		// ── Inspection ──
-		if (resource === 'inspection') {
-			if (operation === 'inspect') {
-				const body: any = { url: this.getNodeParameter('url', 0) as string };
-				const method = this.getNodeParameter('method', 0) as string;
-				if (method) body.method = method;
-				if (!this.getNodeParameter('followRedirects', 0)) body.follow_redirects = false;
-				const max = this.getNodeParameter('maxRedirects', 0) as number;
-				if (max !== 10) body.max_redirects = max;
-				const ua = this.getNodeParameter('userAgent', 0) as string;
-				if (ua) body.user_agent = ua;
-				if (this.getNodeParameter('retrieveBody', 0)) body.retrieve_body = true;
-				const preset = this.getNodeParameter('presetId', 0) as string;
-				if (preset) body.preset_id = preset;
-				result = await api('POST', '/v1/inspect', body);
+				// ── Inspection ──
+				if (resource === 'inspection') {
+					if (operation === 'inspect') {
+						const body: any = { url: this.getNodeParameter('url', i) as string };
+						const method = this.getNodeParameter('method', i) as string;
+						if (method) body.method = method;
+						if (!this.getNodeParameter('followRedirects', i)) body.follow_redirects = false;
+						const max = this.getNodeParameter('maxRedirects', i) as number;
+						if (max !== 10) body.max_redirects = max;
+						const ua = this.getNodeParameter('userAgent', i) as string;
+						if (ua) body.user_agent = ua;
+						if (this.getNodeParameter('retrieveBody', i)) body.retrieve_body = true;
+						const preset = this.getNodeParameter('inspectPresetId', i) as string;
+						if (preset) body.preset_id = preset;
+						result = await api('POST', '/v1/inspect', body);
 
-			} else if (operation === 'compareAgents') {
-				const body: any = { url: this.getNodeParameter('url', 0) as string };
-				const pack = this.getNodeParameter('pack', 0) as string;
-				if (pack) {
-					body.pack = pack;
-				} else {
-					const agents = (this.getNodeParameter('userAgents', 0) as string).split(',').map((s) => s.trim()).filter(Boolean);
-					body.user_agents = agents;
-				}
-				result = await api('POST', '/v1/compare-agents', body);
+					} else if (operation === 'compareAgents') {
+						const body: any = { url: this.getNodeParameter('url', i) as string };
+						const pack = this.getNodeParameter('pack', i) as string;
+						if (pack) {
+							body.pack = pack;
+						} else {
+							const agents = (this.getNodeParameter('userAgents', i) as string).split(',').map((s) => s.trim()).filter(Boolean);
+							body.user_agents = agents;
+						}
+						result = await api('POST', '/v1/compare-agents', body);
 
-			} else if (operation === 'importSitemap') {
-				const sitemapUrl = this.getNodeParameter('sitemapUrl', 0) as string;
-				const data = await api('GET', `/v1/sitemap/parse`, undefined, { url: sitemapUrl });
-				// Split each URL into a separate item
-				const items: INodeExecutionData[] = (data.urls || []).map((url: string) => ({
-					json: { url },
-				}));
-				return [items];
-			}
-		}
-
-		// ── Batch ──
-		if (resource === 'batch') {
-			if (operation === 'create' || operation === 'checkAndWait') {
-				const urlText = this.getNodeParameter('urls', 0) as string;
-				const urls = urlText.split('\n').map((s) => s.trim()).filter(Boolean);
-				const body: any = { urls };
-				const m = this.getNodeParameter('batchMethod', 0) as string;
-				if (m) body.method = m;
-				const ua = this.getNodeParameter('batchUserAgent', 0) as string;
-				if (ua) body.user_agent = ua;
-				if (operation === 'create') {
-					const wh = this.getNodeParameter('webhookUrl', 0) as string;
-					if (wh) body.webhook_url = wh;
-				}
-				if (this.getNodeParameter('exportToSheets', 0)) body.export_to_sheets = true;
-				const preset = this.getNodeParameter('presetId', 0, '') as string;
-				if (preset) body.preset_id = preset;
-
-				const batch = await api('POST', '/v1/batch', body);
-
-			if (operation === 'create') {
-				result = batch;
-			} else {
-				const jobId = batch.job_id;
-				const deadline = Date.now() + 5 * 60 * 1000;
-				let finalStatus = 'pending';
-				while (Date.now() < deadline) {
-					await sleep(3000);
-					const progress = await api('GET', `/v1/batch/${jobId}/progress`);
-					finalStatus = progress.status;
-					if (finalStatus === 'completed' || finalStatus === 'failed') break;
-				}
-
-				if (finalStatus === 'failed') {
-					throw new NodeOperationError(this.getNode(), `Batch job ${jobId} failed. Check the job in checkredirects.io for details.`);
-				}
-				if (finalStatus !== 'completed') {
-					throw new NodeOperationError(
-						this.getNode(),
-						`Batch job ${jobId} is still ${finalStatus} after 5 minutes. Use "Create Batch" + "Get Results" separately for large jobs.`,
-					);
-				}
-
-				result = await api('GET', `/v1/batch/${jobId}`);
-
-					// Optional: compare with previous job
-					const compareWith = this.getNodeParameter('compareWithJobId', 0, '') as string;
-					if (compareWith) {
-						result = await api('GET', `/v1/jobs/${jobId}/compare/${compareWith}`);
-					}
-
-					// Split results if requested
-					if (this.getNodeParameter('splitResults', 0, true) && result.checks) {
-						const items: INodeExecutionData[] = result.checks.map((check: any) => ({
-							json: check,
-						}));
-						return [items];
+					} else if (operation === 'importSitemap') {
+						const sitemapUrl = this.getNodeParameter('sitemapUrl', i) as string;
+						const data = await api('GET', '/v1/sitemap/parse', undefined, { url: sitemapUrl });
+						for (const url of (data.urls || [])) {
+							returnData.push({ json: { url }, pairedItem: i });
+						}
+						continue;
 					}
 				}
 
-			} else if (operation === 'getResults') {
-				const jobId = this.getNodeParameter('jobId', 0) as string;
-				const qs: Record<string, string> = {};
-				const sort = this.getNodeParameter('sort', 0) as string;
-				if (sort && sort !== 'input_order') qs.sort = sort;
-				const uc = this.getNodeParameter('urlContains', 0, '') as string;
-				if (uc) qs.url_contains = uc;
-				const fuc = this.getNodeParameter('finalUrlContains', 0, '') as string;
-				if (fuc) qs.final_url_contains = fuc;
+				// ── Batch ──
+				if (resource === 'batch') {
+					if (operation === 'create' || operation === 'checkAndWait') {
+						const urlText = this.getNodeParameter('urls', i) as string;
+						const urls = urlText.split('\n').map((s) => s.trim()).filter(Boolean);
+						const body: any = { urls };
+						const m = this.getNodeParameter('batchMethod', i) as string;
+						if (m) body.method = m;
+						const ua = this.getNodeParameter('batchUserAgent', i) as string;
+						if (ua) body.user_agent = ua;
+						if (operation === 'create') {
+							const wh = this.getNodeParameter('webhookUrl', i) as string;
+							if (wh) body.webhook_url = wh;
+						}
+						if (this.getNodeParameter('exportToSheets', i)) body.export_to_sheets = true;
+						const preset = this.getNodeParameter('batchPresetId', i, '') as string;
+						if (preset) body.preset_id = preset;
 
-				result = await api('GET', `/v1/batch/${jobId}`, undefined, qs);
+						const batch = await api('POST', '/v1/batch', body);
 
-				if (this.getNodeParameter('splitResults', 0, true) && result.checks) {
-					const items: INodeExecutionData[] = result.checks.map((check: any) => ({
-						json: check,
-					}));
-					return [items];
+						if (operation === 'create') {
+							result = batch;
+						} else {
+							const jobId = batch.job_id;
+							const deadline = Date.now() + 5 * 60 * 1000;
+							let finalStatus = 'pending';
+							while (Date.now() < deadline) {
+								await sleep(3000);
+								const progress = await api('GET', `/v1/batch/${jobId}/progress`);
+								finalStatus = progress.status;
+								if (finalStatus === 'completed' || finalStatus === 'failed') break;
+							}
+
+							if (finalStatus === 'failed') {
+								throw new NodeOperationError(this.getNode(), `Batch job ${jobId} failed. Check the job in checkredirects.io for details.`);
+							}
+							if (finalStatus !== 'completed') {
+								throw new NodeOperationError(
+									this.getNode(),
+									`Batch job ${jobId} is still ${finalStatus} after 5 minutes. Use "Create Batch" + "Get Results" separately for large jobs.`,
+								);
+							}
+
+							result = await api('GET', `/v1/batch/${jobId}`);
+
+							const compareWith = this.getNodeParameter('compareWithJobId', i, '') as string;
+							if (compareWith) {
+								result = await api('GET', `/v1/jobs/${jobId}/compare/${compareWith}`);
+							}
+
+							if (this.getNodeParameter('splitResults', i, true) && result.checks) {
+								for (const check of result.checks) {
+									returnData.push({ json: check, pairedItem: i });
+								}
+								continue;
+							}
+						}
+
+					} else if (operation === 'getResults') {
+						const jobId = this.getNodeParameter('jobId', i) as string;
+						const qs: Record<string, string> = {};
+						const sort = this.getNodeParameter('sort', i) as string;
+						if (sort && sort !== 'input_order') qs.sort = sort;
+						const uc = this.getNodeParameter('urlContains', i, '') as string;
+						if (uc) qs.url_contains = uc;
+						const fuc = this.getNodeParameter('finalUrlContains', i, '') as string;
+						if (fuc) qs.final_url_contains = fuc;
+
+						result = await api('GET', `/v1/batch/${jobId}`, undefined, qs);
+
+						if (this.getNodeParameter('splitResults', i, true) && result.checks) {
+							for (const check of result.checks) {
+								returnData.push({ json: check, pairedItem: i });
+							}
+							continue;
+						}
+
+					} else if (operation === 'getProgress') {
+						const jobId = this.getNodeParameter('jobId', i) as string;
+						result = await api('GET', `/v1/batch/${jobId}/progress`);
+
+					} else if (operation === 'compare') {
+						const jobId = this.getNodeParameter('compareJobId', i) as string;
+						const otherId = this.getNodeParameter('compareOtherJobId', i) as string;
+						const data = await api('GET', `/v1/jobs/${jobId}/compare/${otherId}`);
+
+						const changesOnly = this.getNodeParameter('changesOnly', i, true);
+						let diffs = data.diffs || [];
+						if (changesOnly) {
+							diffs = diffs.filter((d: any) => d.change_type !== 'unchanged');
+						}
+						for (const d of diffs) {
+							returnData.push({ json: d, pairedItem: i });
+						}
+						continue;
+					}
 				}
 
-			} else if (operation === 'getProgress') {
-				const jobId = this.getNodeParameter('jobId', 0) as string;
-				result = await api('GET', `/v1/batch/${jobId}/progress`);
-
-			} else if (operation === 'compare') {
-				const jobId = this.getNodeParameter('compareJobId', 0) as string;
-				const otherId = this.getNodeParameter('compareOtherJobId', 0) as string;
-				const data = await api('GET', `/v1/jobs/${jobId}/compare/${otherId}`);
-
-				const changesOnly = this.getNodeParameter('changesOnly', 0, true);
-				let diffs = data.diffs || [];
-				if (changesOnly) {
-					diffs = diffs.filter((d: any) => d.change_type !== 'unchanged');
+				// ── Monitor ──
+				if (resource === 'monitor') {
+					if (operation === 'list') {
+						result = await api('GET', '/v1/monitors');
+					} else if (operation === 'get') {
+						const id = this.getNodeParameter('monitorId', i) as string;
+						result = await api('GET', `/v1/monitors/${id}`);
+					} else if (operation === 'create') {
+						const urlText = this.getNodeParameter('monitorUrls', i) as string;
+						const body: any = {
+							name: this.getNodeParameter('monitorName', i) as string,
+							urls: urlText.split('\n').map((s) => s.trim()).filter(Boolean),
+							interval_minutes: this.getNodeParameter('intervalMinutes', i) as number,
+						};
+						const wh = this.getNodeParameter('monitorWebhookUrl', i, '') as string;
+						if (wh) body.webhook_url = wh;
+						if (this.getNodeParameter('sheetsAppend', i)) body.sheets_append = true;
+						result = await api('POST', '/v1/monitors', body);
+					} else if (operation === 'update') {
+						const id = this.getNodeParameter('monitorId', i) as string;
+						const urlText = this.getNodeParameter('monitorUrls', i) as string;
+						const body: any = {
+							name: this.getNodeParameter('monitorName', i) as string,
+							urls: urlText.split('\n').map((s) => s.trim()).filter(Boolean),
+							interval_minutes: this.getNodeParameter('intervalMinutes', i) as number,
+						};
+						const wh = this.getNodeParameter('monitorWebhookUrl', i, '') as string;
+						if (wh) body.webhook_url = wh;
+						body.sheets_append = this.getNodeParameter('sheetsAppend', i);
+						result = await api('PUT', `/v1/monitors/${id}`, body);
+					} else if (operation === 'delete') {
+						const id = this.getNodeParameter('monitorId', i) as string;
+						result = await api('DELETE', `/v1/monitors/${id}`);
+					} else if (operation === 'pause') {
+						const id = this.getNodeParameter('monitorId', i) as string;
+						result = await api('POST', `/v1/monitors/${id}/pause`);
+					} else if (operation === 'resume') {
+						const id = this.getNodeParameter('monitorId', i) as string;
+						result = await api('POST', `/v1/monitors/${id}/resume`);
+					} else if (operation === 'trigger') {
+						const id = this.getNodeParameter('monitorId', i) as string;
+						result = await api('POST', `/v1/monitors/${id}/trigger`);
+					} else if (operation === 'getRuns') {
+						const id = this.getNodeParameter('monitorId', i) as string;
+						const qs: Record<string, string> = {};
+						if (this.getNodeParameter('includeChanges', i, false)) qs.include_changes = 'true';
+						result = await api('GET', `/v1/monitors/${id}/runs`, undefined, qs);
+					}
 				}
-				const items: INodeExecutionData[] = diffs.map((d: any) => ({ json: d }));
-				return [items];
+
+				// ── Account ──
+				if (resource === 'account') {
+					if (operation === 'getUsage') {
+						result = await api('GET', '/v1/usage');
+					}
+				}
+
+				if (!result) {
+					throw new NodeOperationError(this.getNode(), `Unknown operation: ${resource}.${operation}`);
+				}
+
+				const unwrapped = unwrap(result);
+				const items_out = this.helpers.returnJsonArray(unwrapped);
+				for (const item of items_out) {
+					returnData.push({ ...item, pairedItem: i });
+				}
+
+			} catch (error) {
+				if (this.continueOnFail()) {
+					returnData.push({ json: { error: (error as Error).message }, pairedItem: i });
+					continue;
+				}
+				throw error;
 			}
 		}
 
-		// ── Monitor ──
-		if (resource === 'monitor') {
-			if (operation === 'list') {
-				result = await api('GET', '/v1/monitors');
-			} else if (operation === 'get') {
-				const id = this.getNodeParameter('monitorId', 0) as string;
-				result = await api('GET', `/v1/monitors/${id}`);
-			} else if (operation === 'create') {
-				const urlText = this.getNodeParameter('monitorUrls', 0) as string;
-				const body: any = {
-					name: this.getNodeParameter('monitorName', 0) as string,
-					urls: urlText.split('\n').map((s) => s.trim()).filter(Boolean),
-					interval_minutes: this.getNodeParameter('intervalMinutes', 0) as number,
-				};
-				const wh = this.getNodeParameter('monitorWebhookUrl', 0, '') as string;
-				if (wh) body.webhook_url = wh;
-				if (this.getNodeParameter('sheetsAppend', 0)) body.sheets_append = true;
-				result = await api('POST', '/v1/monitors', body);
-			} else if (operation === 'update') {
-				const id = this.getNodeParameter('monitorId', 0) as string;
-				const urlText = this.getNodeParameter('monitorUrls', 0) as string;
-				const body: any = {
-					name: this.getNodeParameter('monitorName', 0) as string,
-					urls: urlText.split('\n').map((s) => s.trim()).filter(Boolean),
-					interval_minutes: this.getNodeParameter('intervalMinutes', 0) as number,
-				};
-				const wh = this.getNodeParameter('monitorWebhookUrl', 0, '') as string;
-				if (wh) body.webhook_url = wh;
-				body.sheets_append = this.getNodeParameter('sheetsAppend', 0);
-				result = await api('PUT', `/v1/monitors/${id}`, body);
-			} else if (operation === 'delete') {
-				const id = this.getNodeParameter('monitorId', 0) as string;
-				result = await api('DELETE', `/v1/monitors/${id}`);
-			} else if (operation === 'pause') {
-				const id = this.getNodeParameter('monitorId', 0) as string;
-				result = await api('POST', `/v1/monitors/${id}/pause`);
-			} else if (operation === 'resume') {
-				const id = this.getNodeParameter('monitorId', 0) as string;
-				result = await api('POST', `/v1/monitors/${id}/resume`);
-			} else if (operation === 'trigger') {
-				const id = this.getNodeParameter('monitorId', 0) as string;
-				result = await api('POST', `/v1/monitors/${id}/trigger`);
-			} else if (operation === 'getRuns') {
-				const id = this.getNodeParameter('monitorId', 0) as string;
-				const qs: Record<string, string> = {};
-				if (this.getNodeParameter('includeChanges', 0, false)) qs.include_changes = 'true';
-				result = await api('GET', `/v1/monitors/${id}/runs`, undefined, qs);
-			}
-		}
-
-		// ── Account ──
-		if (resource === 'account') {
-			if (operation === 'getUsage') {
-				result = await api('GET', '/v1/usage');
-			}
-		}
-
-		if (!result) {
-			throw new NodeOperationError(this.getNode(), `Unknown operation: ${resource}.${operation}`);
-		}
-
-		return [this.helpers.returnJsonArray(result)];
+		return [returnData];
 	}
 }

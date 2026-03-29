@@ -23,7 +23,7 @@
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc && npm run copy-assets",
-    "copy-assets": "cp nodes/Checkredirects/*.svg nodes/Checkredirects/*.png nodes/Checkredirects/*.json dist/nodes/Checkredirects/",
+    "copy-assets": "shx cp nodes/Checkredirects/*.svg nodes/Checkredirects/*.png nodes/Checkredirects/*.json dist/nodes/Checkredirects/",
     "lint": "npx @n8n/scan-community-package .",
     "prepublishOnly": "npm run build"
   },
@@ -46,6 +46,7 @@
   },
   "devDependencies": {
     "n8n-workflow": "^1.0.0",
+    "shx": "^0.3.4",
     "typescript": "^5.0.0"
   }
 }
