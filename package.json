@@ -1,0 +1,51 @@
+{
+  "name": "n8n-nodes-checkredirects",
+  "version": "1.0.0",
+  "description": "n8n community node for Checkredirects.io — URL inspection, redirect checking, and monitoring API",
+  "license": "MIT",
+  "author": {
+    "name": "Neon Deer Data Labs",
+    "url": "https://checkredirects.io"
+  },
+  "homepage": "https://checkredirects.io",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/neondeerdatalabs/n8n-nodes-checkredirects"
+  },
+  "keywords": [
+    "n8n",
+    "n8n-community-node-package",
+    "redirect",
+    "seo",
+    "url-inspection",
+    "monitoring"
+  ],
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc && npm run copy-assets",
+    "copy-assets": "cp nodes/Checkredirects/*.svg nodes/Checkredirects/*.png nodes/Checkredirects/*.json dist/nodes/Checkredirects/",
+    "lint": "npx @n8n/scan-community-package .",
+    "prepublishOnly": "npm run build"
+  },
+  "files": [
+    "dist"
+  ],
+  "n8n": {
+    "n8nNodesApiVersion": 1,
+    "credentials": [
+      "dist/credentials/CheckredirectsApi.credentials.js"
+    ],
+    "nodes": [
+      "dist/nodes/Checkredirects/Checkredirects.node.js",
+      "dist/nodes/Checkredirects/CheckredirectsTrigger.node.js",
+      "dist/nodes/Checkredirects/CheckredirectsPollTrigger.node.js"
+    ]
+  },
+  "peerDependencies": {
+    "n8n-workflow": ">=1.0.0"
+  },
+  "devDependencies": {
+    "n8n-workflow": "^1.0.0",
+    "typescript": "^5.0.0"
+  }
+}
