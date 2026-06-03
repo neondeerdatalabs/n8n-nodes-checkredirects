@@ -2,3 +2,6 @@ node_modules/
 dist/
 .DS_Store
 .env
+/docs/audit/
+# Cursor IDE local config (may contain per-developer MCP server paths)
+.cursor/
