@@ -1,6 +1,6 @@
 {
   "name": "n8n-nodes-checkredirects",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "n8n community node for Checkredirects.io — URL inspection, redirect checking, and monitoring API",
   "license": "MIT",
   "author": {
@@ -49,5 +49,8 @@
     "n8n-workflow": "^1.0.0",
     "shx": "^0.3.4",
     "typescript": "^5.0.0"
+  },
+  "engines": {
+    "node": "^22.23.4 || ^24.22.1"
   }
 }
