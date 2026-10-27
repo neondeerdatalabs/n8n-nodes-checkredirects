@@ -7,6 +7,48 @@ import {
 	NodeConnectionTypes,
 	NodeOperationError,
 } from 'n8n-workflow';
+import { assertAllowedBaseUrl, assertApiKeyPresent } from './baseUrl';
+import { mapCheckredirectsApiError } from './apiError';
+import { sanitizeApiMessage, unwrap } from './helpers';
+import { inspectionHandlers } from './handlers/inspection';
+import { batchHandlers } from './handlers/batch';
+import { monitorHandlers } from './handlers/monitor';
+import { accountHandlers } from './handlers/account';
+import { ResourceHandlers, HandlerContext } from './handlers/types';
+
+// Per-resource handler registry. New resources / operations register here.
+// Operation `value` keys are part of the published n8n contract (R1) — never
+// rename existing entries without a major version bump.
+const RESOURCE_HANDLERS: Record<string, ResourceHandlers> = {
+	inspection: inspectionHandlers,
+	batch: batchHandlers,
+	monitor: monitorHandlers,
+	account: accountHandlers,
+};
+
+// Hardcoded fallback for the user-agent pack list — used when /v1/user-agents
+// is unreachable. Keep the existing keys stable per R1.
+function fallbackPacks() {
+	return [
+		{ name: 'Custom (specify agents below)', value: '' },
+		{ name: 'SEO Essentials', value: 'seo_essentials' },
+		{ name: 'Social Preview', value: 'social_preview' },
+		{ name: 'Mobile vs Desktop', value: 'mobile_vs_desktop' },
+		{ name: 'AI Crawler Audit', value: 'ai_crawler_audit' },
+		{ name: 'Full Coverage', value: 'full_coverage' },
+	];
+}
+
+// Minimal fallback set of common user-agents when the catalog can't load.
+function fallbackUserAgents() {
+	return [
+		{ name: 'Googlebot Desktop (search)', value: 'googlebot_desktop' },
+		{ name: 'Googlebot Mobile (search)', value: 'googlebot_mobile' },
+		{ name: 'Bingbot (search)', value: 'bingbot' },
+		{ name: 'Chrome on Windows (browser)', value: 'chrome_windows' },
+		{ name: 'Safari on iPhone (browser)', value: 'safari_iphone' },
+	];
+}
 
 export class Checkredirects implements INodeType {
 	description: INodeTypeDescription = {
@@ -105,12 +147,21 @@ export class Checkredirects implements INodeType {
 				displayOptions: { show: { resource: ['inspection'], operation: ['inspect'] } },
 			},
 			{
-				displayName: 'User Agent',
+				displayName: 'User Agent (Preset)',
+				name: 'userAgentKey',
+				type: 'options',
+				typeOptions: { loadOptionsMethod: 'getUserAgents' },
+				default: '',
+				description: 'Pick a preset from the live /v1/user-agents catalog. Takes precedence over the User Agent string below when set.',
+				displayOptions: { show: { resource: ['inspection'], operation: ['inspect'] } },
+			},
+			{
+				displayName: 'User Agent (Custom)',
 				name: 'userAgent',
 				type: 'string',
 				default: '',
-				placeholder: 'googlebot_desktop or custom string',
-				description: 'A preset key (e.g. googlebot_desktop) or custom UA string',
+				placeholder: 'Mozilla/5.0 ...',
+				description: 'Custom UA string. Used only when User Agent (Preset) is left empty.',
 				displayOptions: { show: { resource: ['inspection'], operation: ['inspect'] } },
 			},
 			{
@@ -121,21 +172,61 @@ export class Checkredirects implements INodeType {
 				description: 'Extract SEO metadata (title, canonical, OG tags) from the final page',
 				displayOptions: { show: { resource: ['inspection'], operation: ['inspect'] } },
 			},
+			{
+				displayName: 'Additional Request Options',
+				name: 'inspectAdditional',
+				type: 'collection',
+				default: {},
+				placeholder: 'Add Option',
+				displayOptions: { show: { resource: ['inspection'], operation: ['inspect'] } },
+				options: [
+					{
+						displayName: 'Headers',
+						name: 'headers',
+						type: 'fixedCollection',
+						default: {},
+						typeOptions: { multipleValues: true },
+						placeholder: 'Add Header',
+						options: [{
+							name: 'entries',
+							displayName: 'Header',
+							values: [
+								{ displayName: 'Name', name: 'name', type: 'string', default: '' },
+								{ displayName: 'Value', name: 'value', type: 'string', default: '' },
+							],
+						}],
+					},
+					{
+						displayName: 'Cookies',
+						name: 'cookies',
+						type: 'string',
+						default: '',
+						description: 'Cookie header value (e.g. "session=abc; ref=foo")',
+					},
+					{
+						displayName: 'Basic Auth User',
+						name: 'basicAuthUser',
+						type: 'string',
+						default: '',
+					},
+					{
+						displayName: 'Basic Auth Password',
+						name: 'basicAuthPass',
+						type: 'string',
+						typeOptions: { password: true },
+						default: '',
+					},
+				],
+			},
 
 			// Compare Agents fields
 			{
 				displayName: 'Pack',
 				name: 'pack',
 				type: 'options',
-				options: [
-					{ name: 'Custom (specify agents below)', value: '' },
-					{ name: 'SEO Essentials', value: 'seo_essentials' },
-					{ name: 'Social Preview', value: 'social_preview' },
-					{ name: 'Mobile vs Desktop', value: 'mobile_vs_desktop' },
-					{ name: 'AI Crawler Audit', value: 'ai_crawler_audit' },
-					{ name: 'Full Coverage', value: 'full_coverage' },
-				],
+				typeOptions: { loadOptionsMethod: 'getUserAgentPacks' },
 				default: 'seo_essentials',
+				description: 'Pack of pre-defined user agents. The list is fetched live from /v1/user-agents — if that endpoint is unreachable, a hardcoded fallback is shown.',
 				displayOptions: { show: { resource: ['inspection'], operation: ['compareAgents'] } },
 			},
 			{
@@ -158,6 +249,15 @@ export class Checkredirects implements INodeType {
 				placeholder: 'https://example.com/sitemap.xml',
 				displayOptions: { show: { resource: ['inspection'], operation: ['importSitemap'] } },
 			},
+			{
+				displayName: 'Max URLs',
+				name: 'sitemapMaxUrls',
+				type: 'number',
+				default: 5000,
+				typeOptions: { minValue: 1, maxValue: 100000 },
+				description: 'Cap on URLs emitted from the sitemap. Large sitemaps (50k+ URLs per sitemap.org standard) can flood downstream nodes; truncating prevents runaway workflows. Raise if you need more, lower for safety.',
+				displayOptions: { show: { resource: ['inspection'], operation: ['importSitemap'] } },
+			},
 
 			// ── Batch operations ──
 			{
@@ -172,6 +272,8 @@ export class Checkredirects implements INodeType {
 					{ name: 'Get Results', value: 'getResults', description: 'Fetch completed batch results', action: 'Get batch results' },
 					{ name: 'Get Progress', value: 'getProgress', description: 'Check batch completion status', action: 'Get batch progress' },
 					{ name: 'Compare Batches', value: 'compare', description: 'Diff two batch runs', action: 'Compare two batches' },
+				{ name: 'Export CSV', value: 'exportCsv', description: 'Download completed batch results as a CSV file (binary)', action: 'Export batch as CSV' },
+				{ name: 'Export to Google Sheets', value: 'exportToSheets', description: 'Push completed batch results into a Google Sheet', action: 'Export batch to Sheets' },
 				],
 				default: 'checkAndWait',
 			},
@@ -231,6 +333,52 @@ export class Checkredirects implements INodeType {
 				displayOptions: { show: { resource: ['batch'], operation: ['create', 'checkAndWait'] } },
 			},
 			{
+				displayName: 'Additional Request Options',
+				name: 'batchAdditional',
+				type: 'collection',
+				default: {},
+				placeholder: 'Add Option',
+				displayOptions: { show: { resource: ['batch'], operation: ['create', 'checkAndWait'] } },
+				options: [
+					{
+						displayName: 'Headers',
+						name: 'headers',
+						type: 'fixedCollection',
+						default: {},
+						typeOptions: { multipleValues: true },
+						placeholder: 'Add Header',
+						options: [{
+							name: 'entries',
+							displayName: 'Header',
+							values: [
+								{ displayName: 'Name', name: 'name', type: 'string', default: '' },
+								{ displayName: 'Value', name: 'value', type: 'string', default: '' },
+							],
+						}],
+					},
+					{
+						displayName: 'Cookies',
+						name: 'cookies',
+						type: 'string',
+						default: '',
+						description: 'Cookie header value applied to every URL in the batch',
+					},
+					{
+						displayName: 'Basic Auth User',
+						name: 'basicAuthUser',
+						type: 'string',
+						default: '',
+					},
+					{
+						displayName: 'Basic Auth Password',
+						name: 'basicAuthPass',
+						type: 'string',
+						typeOptions: { password: true },
+						default: '',
+					},
+				],
+			},
+			{
 				displayName: 'Split Results',
 				name: 'splitResults',
 				type: 'boolean',
@@ -252,7 +400,36 @@ export class Checkredirects implements INodeType {
 				type: 'string',
 				required: true,
 				default: '',
-				displayOptions: { show: { resource: ['batch'], operation: ['getResults', 'getProgress'] } },
+				displayOptions: { show: { resource: ['batch'], operation: ['getResults', 'getProgress', 'exportCsv', 'exportToSheets'] } },
+			},
+			{
+				displayName: 'Spreadsheet Mode',
+				name: 'sheetsExportMode',
+				type: 'options',
+				options: [
+					{ name: 'Default Spreadsheet', value: 'default', description: 'Use the org default spreadsheet (creates one if none exists)' },
+					{ name: 'New Spreadsheet', value: 'new', description: 'Always create a new spreadsheet' },
+					{ name: 'Specific Spreadsheet', value: 'specific', description: 'Use the spreadsheet whose ID you provide below' },
+				],
+				default: 'default',
+				displayOptions: { show: { resource: ['batch'], operation: ['exportToSheets'] } },
+			},
+			{
+				displayName: 'Spreadsheet ID',
+				name: 'sheetsSpreadsheetId',
+				type: 'string',
+				default: '',
+				required: true,
+				description: 'The Google Sheets spreadsheet ID to export to (required when Spreadsheet Mode is Specific)',
+				displayOptions: { show: { resource: ['batch'], operation: ['exportToSheets'], sheetsExportMode: ['specific'] } },
+			},
+			{
+				displayName: 'Drive Folder ID',
+				name: 'sheetsDriveFolderId',
+				type: 'string',
+				default: '',
+				description: 'Optional Google Drive folder ID to create new spreadsheets in. Only used when Spreadsheet Mode is "New" or when creating the first default spreadsheet.',
+				displayOptions: { show: { resource: ['batch'], operation: ['exportToSheets'] } },
 			},
 			{
 				displayName: 'Sort By',
@@ -281,6 +458,24 @@ export class Checkredirects implements INodeType {
 				type: 'string',
 				default: '',
 				description: 'Filter results by final destination URL substring',
+				displayOptions: { show: { resource: ['batch'], operation: ['getResults'] } },
+			},
+			{
+				displayName: 'Page',
+				name: 'page',
+				type: 'number',
+				default: 1,
+				typeOptions: { minValue: 1 },
+				description: 'Page number (1-based). Default returns page 1 only; use Per Page to control page size, then increment Page to fetch the rest.',
+				displayOptions: { show: { resource: ['batch'], operation: ['getResults'] } },
+			},
+			{
+				displayName: 'Per Page',
+				name: 'perPage',
+				type: 'number',
+				default: 100,
+				typeOptions: { minValue: 1, maxValue: 500 },
+				description: 'Results per page (max 500). Higher values return more data per call but are slower; lower values let you stream results incrementally.',
 				displayOptions: { show: { resource: ['batch'], operation: ['getResults'] } },
 			},
 			{
@@ -319,7 +514,7 @@ export class Checkredirects implements INodeType {
 					{ name: 'Create', value: 'create', action: 'Create a monitor' },
 					{ name: 'List', value: 'list', action: 'List monitors' },
 					{ name: 'Get', value: 'get', action: 'Get a monitor' },
-					{ name: 'Update', value: 'update', description: 'Replace all monitor settings (all fields required)', action: 'Update a monitor' },
+					{ name: 'Update', value: 'update', description: 'Replace ALL monitor settings — required fields (name, urls, interval) overwrite the existing values. Optional fields follow the same convention as Create: webhook URL is only set when you provide one (leave blank to keep the existing), Auto-Export to Sheets is only flipped on when checked (leave unchecked to keep the existing).', action: 'Update a monitor' },
 					{ name: 'Delete', value: 'delete', action: 'Delete a monitor' },
 					{ name: 'Pause', value: 'pause', action: 'Pause a monitor' },
 					{ name: 'Resume', value: 'resume', action: 'Resume a monitor' },
@@ -336,6 +531,14 @@ export class Checkredirects implements INodeType {
 				default: '',
 				description: 'The ID of the monitor. Find it on the Monitors page or via List Monitors.',
 				displayOptions: { show: { resource: ['monitor'], operation: ['get', 'update', 'delete', 'pause', 'resume', 'trigger', 'getRuns'] } },
+			},
+			{
+				displayName:
+					'Update is GET-then-PUT (the Checkredirects API does not yet support If-Match / ETag headers). If two workflows update the same monitor at the same time, the later PUT will silently overwrite the earlier one. For high-contention scenarios, serialize updates upstream (queue, lock node, single workflow) until first-class concurrency control ships.',
+				name: 'monitorUpdateConcurrencyNotice',
+				type: 'notice',
+				default: '',
+				displayOptions: { show: { resource: ['monitor'], operation: ['update'] } },
 			},
 			{
 				displayName: 'Name',
@@ -387,6 +590,75 @@ export class Checkredirects implements INodeType {
 				displayOptions: { show: { resource: ['monitor'], operation: ['create', 'update'] } },
 			},
 			{
+				displayName: 'Clear Webhook URL',
+				name: 'clearWebhookUrl',
+				type: 'boolean',
+				default: false,
+				description: 'Update only. Turn ON to explicitly remove the existing webhook URL (otherwise blank input preserves the existing value).',
+				displayOptions: { show: { resource: ['monitor'], operation: ['update'] } },
+			},
+			{
+				displayName: 'Clear Auto-Export to Sheets',
+				name: 'clearSheetsAppend',
+				type: 'boolean',
+				default: false,
+				description: 'Update only. Turn ON to explicitly disable Auto-Export to Sheets on the existing monitor (otherwise the unchecked "Auto-Export" box preserves the existing value).',
+				displayOptions: { show: { resource: ['monitor'], operation: ['update'] } },
+			},
+			{
+				displayName: 'Clear Custom Headers',
+				name: 'clearHeaders',
+				type: 'boolean',
+				default: false,
+				description: 'Update only. Turn ON to explicitly remove ALL custom headers from the existing monitor (otherwise empty Headers in Additional Request Options preserves the existing values).',
+				displayOptions: { show: { resource: ['monitor'], operation: ['update'] } },
+			},
+			{
+				displayName: 'Clear Cookies',
+				name: 'clearCookies',
+				type: 'boolean',
+				default: false,
+				description: 'Update only. Turn ON to explicitly remove the existing Cookies value (otherwise empty Cookies in Additional Request Options preserves the existing value).',
+				displayOptions: { show: { resource: ['monitor'], operation: ['update'] } },
+			},
+			{
+				displayName: 'Additional Request Options',
+				name: 'monitorAdditional',
+				type: 'collection',
+				default: {},
+				placeholder: 'Add Option',
+				displayOptions: { show: { resource: ['monitor'], operation: ['create', 'update'] } },
+				// NOTE: the API's monitorRequest schema only accepts headers + cookies
+				// here — basic_auth is supported on inspect / batch only. Don't add a
+				// basic auth field unless the API adds it server-side first; the
+				// request would 400 due to DisallowUnknownFields.
+				options: [
+					{
+						displayName: 'Headers',
+						name: 'headers',
+						type: 'fixedCollection',
+						default: {},
+						typeOptions: { multipleValues: true },
+						placeholder: 'Add Header',
+						options: [{
+							name: 'entries',
+							displayName: 'Header',
+							values: [
+								{ displayName: 'Name', name: 'name', type: 'string', default: '' },
+								{ displayName: 'Value', name: 'value', type: 'string', default: '' },
+							],
+						}],
+					},
+					{
+						displayName: 'Cookies',
+						name: 'cookies',
+						type: 'string',
+						default: '',
+						description: 'Cookie header value applied to every monitor check',
+					},
+				],
+			},
+			{
 				displayName: 'Include Changes',
 				name: 'includeChanges',
 				type: 'boolean',
@@ -414,24 +686,87 @@ export class Checkredirects implements INodeType {
 		loadOptions: {
 			async getPresets(this: ILoadOptionsFunctions) {
 				try {
+					const creds = await this.getCredentials('checkredirectsApi');
+					const baseUrl = assertAllowedBaseUrl(creds.baseUrl, { allowCustomHost: creds.allowCustomHost as boolean | undefined });
 					const response = await this.helpers.httpRequestWithAuthentication.call(
 						this,
 						'checkredirectsApi',
 						{
 							method: 'GET',
-							url: `${(await this.getCredentials('checkredirectsApi')).baseUrl}/v1/presets`,
+							url: `${baseUrl}/v1/presets`,
 							json: true,
 						},
 					);
 					const options = [{ name: '(None)', value: '' }];
-					if (response?.data) {
+					if (Array.isArray(response?.data)) {
 						for (const p of response.data) {
 							options.push({ name: p.name, value: p.id });
 						}
 					}
 					return options;
+				} catch (err: any) {
+					// Distinguish "no presets exist" (which would still return [{name:'(None)'}])
+					// from "could not load presets" so the user can debug rather than
+					// silently see (None). Common causes: bad apiKey, bad baseUrl
+					// (caught by assertAllowedBaseUrl), or upstream outage.
+					const httpStatus = err?.response?.status || err?.statusCode;
+					if (httpStatus === 401) {
+						return [{ name: '(Could not load presets — invalid API key)', value: '' }];
+					}
+					if (typeof httpStatus === 'number') {
+						return [{ name: `(Could not load presets — API returned ${httpStatus})`, value: '' }];
+					}
+					if (err?.message && /Base URL|API key/i.test(err.message)) {
+						return [{ name: '(Could not load presets — check credentials)', value: '' }];
+					}
+					return [{ name: '(Could not load presets — see node logs)', value: '' }];
+				}
+			},
+
+			// /v1/user-agents is public — no auth required — but we still funnel
+			// through assertAllowedBaseUrl so an attacker-edited baseUrl can't
+			// leak the bearer header via the loadOptions request.
+			async getUserAgents(this: ILoadOptionsFunctions) {
+				try {
+					const creds = await this.getCredentials('checkredirectsApi');
+					const baseUrl = assertAllowedBaseUrl(creds.baseUrl, { allowCustomHost: creds.allowCustomHost as boolean | undefined });
+					const response = await this.helpers.httpRequestWithAuthentication.call(
+						this,
+						'checkredirectsApi',
+						{ method: 'GET', url: `${baseUrl}/v1/user-agents`, json: true },
+					);
+					const agents = Array.isArray(response?.agents) ? response.agents : [];
+					if (agents.length === 0) return fallbackUserAgents();
+					return agents.map((a: any) => ({
+						name: `${a.label || a.key} (${a.group || 'other'})`,
+						value: a.key,
+					}));
 				} catch {
-					return [{ name: '(None)', value: '' }];
+					return fallbackUserAgents();
+				}
+			},
+
+			async getUserAgentPacks(this: ILoadOptionsFunctions) {
+				try {
+					const creds = await this.getCredentials('checkredirectsApi');
+					const baseUrl = assertAllowedBaseUrl(creds.baseUrl, { allowCustomHost: creds.allowCustomHost as boolean | undefined });
+					const response = await this.helpers.httpRequestWithAuthentication.call(
+						this,
+						'checkredirectsApi',
+						{ method: 'GET', url: `${baseUrl}/v1/user-agents`, json: true },
+					);
+					const packs = Array.isArray(response?.packs) ? response.packs : [];
+					const options = [{ name: 'Custom (specify agents below)', value: '' }];
+					for (const p of packs) {
+						options.push({
+							name: p.name || p.key,
+							value: p.key,
+						});
+					}
+					if (options.length === 1) return fallbackPacks();
+					return options;
+				} catch {
+					return fallbackPacks();
 				}
 			},
 		},
@@ -440,12 +775,44 @@ export class Checkredirects implements INodeType {
 	async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
 		const items = this.getInputData();
 		const returnData: INodeExecutionData[] = [];
-		const resource = this.getNodeParameter('resource', 0) as string;
-		const operation = this.getNodeParameter('operation', 0) as string;
-		const credentials = await this.getCredentials('checkredirectsApi');
-		const baseUrl = credentials.baseUrl as string;
 
-		const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+		// Preflight: checkAndWait blocks the worker for up to 5 minutes per item.
+		// Reject multi-item executions where ANY item uses checkAndWait (item-0
+		// alone is not safe to check after F-015 made resource/operation per-item).
+		// Multi-item flows should use Create Batch + Get Results, or wire the
+		// Webhook Trigger to fire when each batch completes.
+		//
+		// continueOnFail honored: when ON, we defer the rejection into the per-
+		// item loop so non-checkAndWait items still process and the disallowed
+		// items emit a clean `{ error }` output instead of aborting execution.
+		// When OFF, we hard-throw before any item runs to preserve the current
+		// fail-fast semantic.
+		const hasMultiItemCheckAndWait = items.length > 1 && (() => {
+			for (let j = 0; j < items.length; j++) {
+				const r = this.getNodeParameter('resource', j) as string;
+				const o = this.getNodeParameter('operation', j) as string;
+				if (r === 'batch' && o === 'checkAndWait') return true;
+			}
+			return false;
+		})();
+
+		if (hasMultiItemCheckAndWait && !this.continueOnFail()) {
+			throw new NodeOperationError(
+				this.getNode(),
+				`Batch "Check and Wait" only supports one input item per execution (multi-item input with checkAndWait detected). Use "Create Batch" followed by "Get Results" or the Webhook Trigger for multi-item flows.`,
+			);
+		}
+
+		const credentials = await this.getCredentials('checkredirectsApi');
+		let baseUrl: string;
+		try {
+			assertApiKeyPresent(credentials.apiKey);
+			baseUrl = assertAllowedBaseUrl(credentials.baseUrl, { allowCustomHost: credentials.allowCustomHost as boolean | undefined });
+		} catch (err) {
+			throw new NodeOperationError(this.getNode(), (err as Error).message);
+		}
+
+		const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(() => r(), ms));
 
 		const api = async (method: string, path: string, body?: object, qs?: Record<string, string>, retries = 1): Promise<any> => {
 			const options: any = {
@@ -474,233 +841,95 @@ export class Checkredirects implements INodeType {
 				}
 
 				const respBody = error?.response?.body;
-				const apiMsg = typeof respBody === 'string' ? respBody : respBody?.error?.message;
-				const msg = apiMsg || error?.message || 'API request failed';
-				if (httpStatus === 401) throw new NodeOperationError(this.getNode(), 'Invalid API key. Create one at Settings > API Keys in checkredirects.io.');
-				if (httpStatus === 403) throw new NodeOperationError(this.getNode(), msg || 'This feature requires a paid plan. Upgrade at checkredirects.io/settings/billing.');
-				if (httpStatus === 422) throw new NodeOperationError(this.getNode(), msg);
-				if (httpStatus === 429) throw new NodeOperationError(this.getNode(), `Monthly check limit exceeded. ${msg}. Upgrade at checkredirects.io/settings/billing.`);
-				if (httpStatus === 503) throw new NodeOperationError(this.getNode(), 'Service unavailable. Google Sheets may not be connected — check checkredirects.io/settings/integrations.');
-				throw new NodeOperationError(this.getNode(), `API error (${httpStatus || networkCode || 'unknown'}): ${msg}`);
+				const rawApiMsg = typeof respBody === 'string' ? respBody : respBody?.error?.message;
+				const apiMessage = sanitizeApiMessage(rawApiMsg) || sanitizeApiMessage(error?.message);
+				throw new NodeOperationError(
+					this.getNode(),
+					mapCheckredirectsApiError(error, { apiMessage }),
+				);
 			}
 		};
 
-		const unwrap = (result: any): any => {
-			if (Array.isArray(result)) return result;
-			if (result?.data && Array.isArray(result.data)) return result.data;
-			if (result?.checks && Array.isArray(result.checks)) return result.checks;
-			return result;
+		// Authenticated GET for binary endpoints (e.g. CSV download). Returns the
+		// raw response buffer. Uses the same baseUrl + credential plumbing as api()
+		// AND mirrors api()'s single-retry policy on 5xx / transient network errors.
+		const binaryGet = async (path: string, retries = 1): Promise<Buffer> => {
+			try {
+				const response = await this.helpers.httpRequestWithAuthentication.call(
+					this,
+					'checkredirectsApi',
+					{
+						method: 'GET',
+						url: `${baseUrl}${path}`,
+						encoding: 'arraybuffer',
+						returnFullResponse: false,
+					},
+				);
+				return Buffer.isBuffer(response) ? response : Buffer.from(response as any);
+			} catch (error: any) {
+				const httpStatus = error?.response?.status || error?.statusCode;
+				const networkCode = error?.cause?.code || error?.code;
+				const isRetryable = (httpStatus && httpStatus >= 500) ||
+					['ECONNREFUSED', 'ETIMEDOUT', 'ECONNRESET', 'EAI_AGAIN'].includes(networkCode);
+				if (isRetryable && retries > 0) {
+					await sleep(2000);
+					return binaryGet(path, retries - 1);
+				}
+				const respBody = error?.response?.body;
+				const rawApiMsg = typeof respBody === 'string' ? respBody : respBody?.error?.message;
+				const apiMessage = sanitizeApiMessage(rawApiMsg) || sanitizeApiMessage(error?.message);
+				throw new NodeOperationError(
+					this.getNode(),
+					mapCheckredirectsApiError(error, { apiMessage }),
+				);
+			}
 		};
 
 		for (let i = 0; i < items.length; i++) {
+			// F-015: read resource/operation per item so expression-bound values from
+			// $json on items > 0 resolve correctly.
+			const resource = this.getNodeParameter('resource', i) as string;
+			const operation = this.getNodeParameter('operation', i) as string;
+
 			try {
-				let result: any;
+				// Per-item gate for the multi-item checkAndWait case. Only reached
+				// when continueOnFail() is true (otherwise the preflight throw above
+				// already aborted execution). Throws inside the per-item try so the
+				// catch below converts it to a clean per-item error output.
+				if (hasMultiItemCheckAndWait && resource === 'batch' && operation === 'checkAndWait') {
+					throw new NodeOperationError(
+						this.getNode(),
+						'Batch "Check and Wait" cannot run in a multi-item execution (worker would block for hours). Use "Create Batch" + "Get Results" or the Webhook Trigger for multi-item flows.',
+					);
+				}
 
-				// ── Inspection ──
-				if (resource === 'inspection') {
-					if (operation === 'inspect') {
-						const body: any = { url: this.getNodeParameter('url', i) as string };
-						const method = this.getNodeParameter('method', i) as string;
-						if (method) body.method = method;
-						if (!this.getNodeParameter('followRedirects', i)) body.follow_redirects = false;
-						const max = this.getNodeParameter('maxRedirects', i) as number;
-						if (max !== 10) body.max_redirects = max;
-						const ua = this.getNodeParameter('userAgent', i) as string;
-						if (ua) body.user_agent = ua;
-						if (this.getNodeParameter('retrieveBody', i)) body.retrieve_body = true;
-						const preset = this.getNodeParameter('inspectPresetId', i) as string;
-						if (preset) body.preset_id = preset;
-						result = await api('POST', '/v1/inspect', body);
+				const handlers = RESOURCE_HANDLERS[resource];
+				const handler = handlers && handlers[operation];
+				if (!handler) {
+					throw new NodeOperationError(
+						this.getNode(),
+						`Unknown operation: ${resource}.${operation}`,
+					);
+				}
 
-					} else if (operation === 'compareAgents') {
-						const body: any = { url: this.getNodeParameter('url', i) as string };
-						const pack = this.getNodeParameter('pack', i) as string;
-						if (pack) {
-							body.pack = pack;
-						} else {
-							const agents = (this.getNodeParameter('userAgents', i) as string).split(',').map((s) => s.trim()).filter(Boolean);
-							body.user_agents = agents;
-						}
-						result = await api('POST', '/v1/compare-agents', body);
+				const ctx: HandlerContext = {
+					exec: this,
+					api,
+					binaryGet,
+					sleep,
+					pushItem: (json, pairedItem) => returnData.push({ json, pairedItem }),
+					pushExecution: (data) => returnData.push(data),
+				};
 
-					} else if (operation === 'importSitemap') {
-						const sitemapUrl = this.getNodeParameter('sitemapUrl', i) as string;
-						const data = await api('GET', '/v1/sitemap/parse', undefined, { url: sitemapUrl });
-						for (const url of (data.urls || [])) {
-							returnData.push({ json: { url }, pairedItem: i });
-						}
-						continue;
+				const ret = await handler(ctx, i);
+				if ('result' in ret) {
+					const unwrapped = unwrap(ret.result);
+					const items_out = this.helpers.returnJsonArray(unwrapped);
+					for (const item of items_out) {
+						returnData.push({ ...item, pairedItem: i });
 					}
 				}
-
-				// ── Batch ──
-				if (resource === 'batch') {
-					if (operation === 'create' || operation === 'checkAndWait') {
-						const urlText = this.getNodeParameter('urls', i) as string;
-						const urls = urlText.split('\n').map((s) => s.trim()).filter(Boolean);
-						const body: any = { urls };
-						const m = this.getNodeParameter('batchMethod', i) as string;
-						if (m) body.method = m;
-						const ua = this.getNodeParameter('batchUserAgent', i) as string;
-						if (ua) body.user_agent = ua;
-						if (operation === 'create') {
-							const wh = this.getNodeParameter('webhookUrl', i) as string;
-							if (wh) body.webhook_url = wh;
-						}
-						if (this.getNodeParameter('exportToSheets', i)) body.export_to_sheets = true;
-						const preset = this.getNodeParameter('batchPresetId', i, '') as string;
-						if (preset) body.preset_id = preset;
-
-						const batch = await api('POST', '/v1/batch', body);
-
-						if (operation === 'create') {
-							result = batch;
-						} else {
-							const jobId = batch.job_id;
-							const deadline = Date.now() + 5 * 60 * 1000;
-							let finalStatus = 'pending';
-							while (Date.now() < deadline) {
-								await sleep(3000);
-								const progress = await api('GET', `/v1/batch/${jobId}/progress`);
-								finalStatus = progress.status;
-								if (finalStatus === 'completed' || finalStatus === 'failed') break;
-							}
-
-							if (finalStatus === 'failed') {
-								throw new NodeOperationError(this.getNode(), `Batch job ${jobId} failed. Check the job in checkredirects.io for details.`);
-							}
-							if (finalStatus !== 'completed') {
-								throw new NodeOperationError(
-									this.getNode(),
-									`Batch job ${jobId} is still ${finalStatus} after 5 minutes. Use "Create Batch" + "Get Results" separately for large jobs.`,
-								);
-							}
-
-							result = await api('GET', `/v1/batch/${jobId}`);
-
-							const compareWith = this.getNodeParameter('compareWithJobId', i, '') as string;
-							if (compareWith) {
-								result = await api('GET', `/v1/jobs/${jobId}/compare/${compareWith}`);
-								if (this.getNodeParameter('splitResults', i, true) && result.diffs) {
-									for (const diff of result.diffs) {
-										returnData.push({ json: diff, pairedItem: i });
-									}
-									continue;
-								}
-							} else if (this.getNodeParameter('splitResults', i, true) && result.checks) {
-								for (const check of result.checks) {
-									returnData.push({ json: check, pairedItem: i });
-								}
-								continue;
-							}
-						}
-
-					} else if (operation === 'getResults') {
-						const jobId = this.getNodeParameter('jobId', i) as string;
-						const qs: Record<string, string> = {};
-						const sort = this.getNodeParameter('sort', i) as string;
-						if (sort && sort !== 'input_order') qs.sort = sort;
-						const uc = this.getNodeParameter('urlContains', i, '') as string;
-						if (uc) qs.url_contains = uc;
-						const fuc = this.getNodeParameter('finalUrlContains', i, '') as string;
-						if (fuc) qs.final_url_contains = fuc;
-
-						result = await api('GET', `/v1/batch/${jobId}`, undefined, qs);
-
-						if (this.getNodeParameter('splitResults', i, true) && result.checks) {
-							for (const check of result.checks) {
-								returnData.push({ json: check, pairedItem: i });
-							}
-							continue;
-						}
-
-					} else if (operation === 'getProgress') {
-						const jobId = this.getNodeParameter('jobId', i) as string;
-						result = await api('GET', `/v1/batch/${jobId}/progress`);
-
-					} else if (operation === 'compare') {
-						const jobId = this.getNodeParameter('compareJobId', i) as string;
-						const otherId = this.getNodeParameter('compareOtherJobId', i) as string;
-						const data = await api('GET', `/v1/jobs/${jobId}/compare/${otherId}`);
-
-						const changesOnly = this.getNodeParameter('changesOnly', i, true);
-						let diffs = data.diffs || [];
-						if (changesOnly) {
-							diffs = diffs.filter((d: any) => d.change !== 'unchanged');
-						}
-						for (const d of diffs) {
-							returnData.push({ json: d, pairedItem: i });
-						}
-						continue;
-					}
-				}
-
-				// ── Monitor ──
-				if (resource === 'monitor') {
-					if (operation === 'list') {
-						result = await api('GET', '/v1/monitors');
-					} else if (operation === 'get') {
-						const id = this.getNodeParameter('monitorId', i) as string;
-						result = await api('GET', `/v1/monitors/${id}`);
-					} else if (operation === 'create') {
-						const urlText = this.getNodeParameter('monitorUrls', i) as string;
-						const body: any = {
-							name: this.getNodeParameter('monitorName', i) as string,
-							urls: urlText.split('\n').map((s) => s.trim()).filter(Boolean),
-							interval_minutes: this.getNodeParameter('intervalMinutes', i) as number,
-						};
-						const wh = this.getNodeParameter('monitorWebhookUrl', i, '') as string;
-						if (wh) body.webhook_url = wh;
-						if (this.getNodeParameter('sheetsAppend', i)) body.sheets_append = true;
-						result = await api('POST', '/v1/monitors', body);
-					} else if (operation === 'update') {
-						const id = this.getNodeParameter('monitorId', i) as string;
-						const urlText = this.getNodeParameter('monitorUrls', i) as string;
-						const body: any = {
-							name: this.getNodeParameter('monitorName', i) as string,
-							urls: urlText.split('\n').map((s) => s.trim()).filter(Boolean),
-							interval_minutes: this.getNodeParameter('intervalMinutes', i) as number,
-						};
-						const wh = this.getNodeParameter('monitorWebhookUrl', i, '') as string;
-						if (wh) body.webhook_url = wh;
-						body.sheets_append = this.getNodeParameter('sheetsAppend', i);
-						result = await api('PUT', `/v1/monitors/${id}`, body);
-					} else if (operation === 'delete') {
-						const id = this.getNodeParameter('monitorId', i) as string;
-						result = await api('DELETE', `/v1/monitors/${id}`);
-					} else if (operation === 'pause') {
-						const id = this.getNodeParameter('monitorId', i) as string;
-						result = await api('POST', `/v1/monitors/${id}/pause`);
-					} else if (operation === 'resume') {
-						const id = this.getNodeParameter('monitorId', i) as string;
-						result = await api('POST', `/v1/monitors/${id}/resume`);
-					} else if (operation === 'trigger') {
-						const id = this.getNodeParameter('monitorId', i) as string;
-						result = await api('POST', `/v1/monitors/${id}/trigger`);
-					} else if (operation === 'getRuns') {
-						const id = this.getNodeParameter('monitorId', i) as string;
-						const qs: Record<string, string> = {};
-						if (this.getNodeParameter('includeChanges', i, false)) qs.include_changes = 'true';
-						result = await api('GET', `/v1/monitors/${id}/runs`, undefined, qs);
-					}
-				}
-
-				// ── Account ──
-				if (resource === 'account') {
-					if (operation === 'getUsage') {
-						result = await api('GET', '/v1/usage');
-					}
-				}
-
-				if (!result) {
-					throw new NodeOperationError(this.getNode(), `Unknown operation: ${resource}.${operation}`);
-				}
-
-				const unwrapped = unwrap(result);
-				const items_out = this.helpers.returnJsonArray(unwrapped);
-				for (const item of items_out) {
-					returnData.push({ ...item, pairedItem: i });
-				}
+				// else: handler used ctx.pushItem(...) directly.
 
 			} catch (error) {
 				if (this.continueOnFail()) {
