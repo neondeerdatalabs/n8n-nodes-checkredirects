@@ -42,7 +42,7 @@ Restart n8n after installation.
 1. Install the node (see above)
 2. Create a new workflow in n8n
 3. Add the **Checkredirects.io** node
-4. Create credentials: paste your API key (starts with `httpnd_`, or legacy `httpd_`) from [Settings > API Keys](https://checkredirects.io/settings/api-keys)
+4. Create credentials: paste your API key (starts with `httpd_`) from [Settings > API Keys](https://checkredirects.io/settings/api-keys)
 5. Set Resource to **URL Inspection**, Operation to **Inspect URL**
 6. Enter a URL and execute -- you'll get the full redirect chain, status codes, and timing
 
@@ -71,7 +71,7 @@ All nodes communicate with the [Checkredirects.io API](https://checkredirects.io
 
 | Field    | Description                                           |
 | -------- | ----------------------------------------------------- |
-| API Key  | Your Checkredirects.io API key (starts with `httpnd_` for new keys, or legacy `httpd_`) |
+| API Key  | Your Checkredirects.io API key (starts with `httpd_`) |
 | Base URL | `https://api.checkredirects.io` (default)             |
 
 Create an API key at [checkredirects.io/settings/api-keys](https://checkredirects.io/settings/api-keys).
