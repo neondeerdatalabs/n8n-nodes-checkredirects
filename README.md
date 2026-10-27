@@ -5,6 +5,7 @@ n8n community node for the [Checkredirects.io](https://checkredirects.io) API --
 ## Table of Contents
 
 - [Prerequisites](#prerequisites)
+- [Security updates](#security-updates)
 - [Installation](#installation)
 - [Quick Start](#quick-start)
 - [Architecture Overview](#architecture-overview)
@@ -16,8 +17,28 @@ n8n community node for the [Checkredirects.io](https://checkredirects.io) API --
 
 ## Prerequisites
 
-- **n8n** (self-hosted or cloud) -- any recent version
+- **n8n** running Node.js **22.23.4 or newer within 22.x**, or **24.22.1 or newer within 24.x**
 - A **Checkredirects.io** account with an API key ([sign up](https://checkredirects.io) / [create API key](https://checkredirects.io/settings/api-keys))
+
+## Security updates
+
+The [October 2026 runtime advisory](https://render.com/docs/advisory-emudhra)
+requires updating Node.js and the certificate store used by your n8n server.
+Updating this community node does not update the host runtime.
+
+- **Docker:** rebuild or pull an updated n8n image, then recreate the container.
+  Restarting the old container keeps its old runtime and certificates.
+- **npm-based hosting:** update the Node.js installation used by the n8n service,
+  refresh system certificates, then restart the service.
+- **Managed hosting:** have your provider confirm the runtime is patched.
+
+Verify from an n8n HTTP Request node with certificate verification enabled:
+
+- `https://dv-g3b-emudhra.we-have-a-problem.com/` must fail certificate verification.
+- `https://dv-g3b-aaa-emudhra.we-have-a-problem.com/` must fail certificate verification.
+- `https://example.com/` must succeed.
+
+A timeout or DNS error does not demonstrate certificate rejection.
 
 ## Installation
 
